@@ -24,6 +24,13 @@
   <label for="tunnel">Tunnel URL</label>
   <input id="tunnel" type="url" placeholder="https://something.trycloudflare.com">
 
+  <p class="muted" id="found">
+    The tunnel address can be filled in automatically from the members'
+    tunnel-status repository, using the GitHub token you signed in with on
+    the <a href="board.html">board</a>.
+  </p>
+  <button class="secondary" id="find">Get current address</button>
+
   <label for="token">Token</label>
   <input id="token" type="password" placeholder="Meta-System token">
 
@@ -109,6 +116,46 @@ function load() {
   renderBrief();
 }
 
+// The tunnel's current address, published by the machine itself to the
+// private Cagedsquirrel/tunnel-status repo each time the tunnel starts.
+// Read with the board's GitHub token; the token must include that repo.
+const BOARD_KEY = "cagedsquirrel.board.token";
+const STATUS_URL = "https://api.github.com/repos/Cagedsquirrel/tunnel-status/contents/dot113.json";
+
+async function findAddress(quiet) {
+  let gh = "";
+  try { gh = localStorage.getItem(BOARD_KEY) || ""; } catch (e) { /* ignore */ }
+  if (!gh) {
+    if (!quiet) log("No GitHub token saved. Sign in on the board first.");
+    return;
+  }
+  try {
+    const res = await fetch(STATUS_URL, {
+      headers: { "Authorization": "Bearer " + gh, "Accept": "application/vnd.github.raw+json" },
+      cache: "no-store"
+    });
+    if (res.status === 401) {
+      log("GitHub didn't accept the saved token. It may have expired; sign in again on the board.");
+      return;
+    }
+    if (res.status === 404 || res.status === 403) {
+      log("Your GitHub token can't see the tunnel-status repository. Add it to the token's selected repositories.");
+      return;
+    }
+    if (!res.ok) { log("GitHub answered " + res.status + "."); return; }
+    const info = await res.json();
+    if (!info.url) { log("No address published yet."); return; }
+    const changed = $("tunnel").value.trim() !== info.url;
+    $("tunnel").value = info.url;
+    $("found").textContent = "Current address from dot113, published " +
+      new Date(info.updated).toLocaleString() + ".";
+    save();
+    log(changed ? "Filled in the current address: " + info.url : "Address is current.");
+  } catch (e) {
+    log("Couldn't reach GitHub to get the address.");
+  }
+}
+
 function renderBrief() {
   const c = readFields();
   if (!c || !c.token) {
@@ -189,6 +236,7 @@ function forget() {
   log("Forgot the saved connection.");
 }
 
+$("find").addEventListener("click", () => findAddress(false));
 $("test").addEventListener("click", test);
 $("open").addEventListener("click", openMs);
 $("copy").addEventListener("click", copyBrief);
@@ -196,6 +244,7 @@ $("forget").addEventListener("click", forget);
 $("tunnel").addEventListener("change", save);
 $("token").addEventListener("change", save);
 load();
+findAddress(true);
 </script>
 </body>
 </html>
