@@ -177,12 +177,22 @@ async function signIn() {
   if (!token) { log("Paste a token first."); return; }
   setStatus("Checking...");
   try {
-    const d = await gql(
-      "query($o:String!,$n:String!){ viewer{login} repository(owner:$o,name:$n){ id viewerPermission hasDiscussionsEnabled discussionCategories(first:25){nodes{id name}} } }",
-      { o: OWNER, n: REPO });
+    // Ask for the login on its own first: when the token can't see the
+    // repository, GitHub answers with an error instead of an empty result.
+    const v = await gql("query{ viewer{login} }");
+    let d = null;
+    try {
+      d = await gql(
+        "query($o:String!,$n:String!){ repository(owner:$o,name:$n){ id viewerPermission hasDiscussionsEnabled discussionCategories(first:25){nodes{id name}} } }",
+        { o: OWNER, n: REPO });
+    } catch (e) {
+      if (!/Could not resolve to a Repository/i.test(e.message)) throw e;
+    }
+    d = d || {};
+    d.viewer = v.viewer;
     if (!d.repository) {
       setStatus("Signed in as " + d.viewer.login + ", but no access", "error");
-      log("The token works, but it can't see the shared repository. Either this account isn't a member, or the token wasn't given access to that repository.");
+      log("The token works, but it can't see the shared repository. Check that the token's resource owner is Cagedsquirrel and the shared repository is selected; if the organization requires approval, an admin must approve the token first. A classic token with the repo scope also works.");
       return;
     }
     repoId = d.repository.id;
