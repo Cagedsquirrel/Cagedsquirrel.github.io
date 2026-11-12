@@ -70,6 +70,11 @@ async function csTunnelInfo(token) {
     token, "application/vnd.github.raw+json");
   if (res.status === 401) throw new Error("GitHub didn't accept the saved token. Sign out and sign in again.");
   if (res.status === 404 || res.status === 403) {
+    // A fine-grained token can see a repository (metadata) without being
+    // allowed to read its files, so tell the two cases apart.
+    if (await csCanSee(CS.STATUS_REPO, token)) {
+      throw new Error("Your token can see the tunnel-status repository but can't read its files. On GitHub, edit the token and set Repository permissions, Contents, to Read-only.");
+    }
     throw new Error("Your token can't see the tunnel-status repository. Add it to the token's selected repositories on GitHub.");
   }
   if (!res.ok) throw new Error("GitHub answered " + res.status + ".");

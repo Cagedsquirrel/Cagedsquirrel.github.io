@@ -65,13 +65,12 @@ async function check() {
     $("dot").className = "dot error";
     return;
   }
+  // Read the address file itself: seeing the repository isn't enough.
   const [tunnel, board] = await Promise.all([
-    csCanSee(CS.STATUS_REPO, token),
+    csTunnelInfo(token).then(() => "", e => e.message),
     csCanSee(CS.BOARD_REPO, token)
   ]);
-  $("tunnelAccess").textContent = tunnel
-    ? "Your token can find the prototype's address."
-    : "Your token can't see the tunnel-status repository yet. Add it to the token's selected repositories on GitHub.";
+  $("tunnelAccess").textContent = tunnel || "Your token can find the prototype's address.";
   $("boardAccess").textContent = board
     ? "Your token can open the board."
     : "Your token can't see the board's repository (converse-here). Add it to the token's selected repositories on GitHub.";
