@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CagedSquirrel Connection</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1><a href="index.html" style="text-decoration:none"><span>CagedSquirrel</span></a> / Connection</h1>
+  <div class="subtitle">Point this page at a running Meta-System tunnel</div>
+</header>
+
+<section class="panel">
+  <h2>Connection</h2>
+  <p class="muted">
+    Saved in this browser only. Nothing you enter here is sent to GitHub.
+    You can paste the full link, token included, into the first field.
+  </p>
+
+  <label for="tunnel">Tunnel URL</label>
+  <input id="tunnel" type="url" placeholder="https://something.trycloudflare.com">
+
+  <label for="token">Token</label>
+  <input id="token" type="password" placeholder="Meta-System token">
+
+  <button class="connect" id="test">Test</button>
+  <button class="send" id="open">Open Meta-System</button>
+  <button class="secondary" id="forget">Forget</button>
+
+  <div class="status">
+    <div id="dot" class="dot"></div>
+    <strong id="status">Not tested</strong>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>For ChatGPT</h2>
+  <p class="muted">
+    Paste this into a ChatGPT conversation so it knows how to reach the
+    prototype. It includes the token.
+  </p>
+  <textarea id="brief" readonly></textarea>
+  <button class="connect" id="copy">Copy for ChatGPT</button>
+</section>
+
+<section class="panel">
+  <h2>Log</h2>
+  <div id="log">Ready.</div>
+</section>
+
+<footer><a href="index.html">Home</a></footer>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const KEY = "cagedsquirrel.connection";
+
+function log(message) {
+  const time = new Date().toLocaleTimeString();
+  $("log").textContent += "\n[" + time + "] " + message;
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function setStatus(text, kind) {
+  $("status").textContent = text;
+  $("dot").className = "dot " + (kind || "");
+}
+
+// Accepts a bare host, a URL, or a full link with ?token= and splits it.
+function readFields() {
+  let raw = $("tunnel").value.trim();
+  let token = $("token").value.trim();
+  if (!raw) return null;
+  if (!/^https?:\/\//i.test(raw)) raw = "https://" + raw;
+  let url;
+  try { url = new URL(raw); } catch (e) { return null; }
+  const fromLink = url.searchParams.get("token");
+  if (fromLink && !token) {
+    token = fromLink;
+    $("token").value = token;
+  }
+  const base = url.origin;
+  $("tunnel").value = base;
+  return { base: base, token: token };
+}
+
+function save() {
+  const c = readFields();
+  try {
+    if (c) localStorage.setItem(KEY, JSON.stringify(c));
+  } catch (e) { /* storage unavailable; the page still works */ }
+  renderBrief();
+  return c;
+}
+
+function load() {
+  try {
+    const c = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (c) {
+      $("tunnel").value = c.base || "";
+      $("token").value = c.token || "";
+    }
+  } catch (e) { /* ignore */ }
+  renderBrief();
+}
+
+function renderBrief() {
+  const c = readFields();
+  if (!c || !c.token) {
+    $("brief").value = "Enter the tunnel URL and token above first.";
+    return;
+  }
+  const t = "?token=" + encodeURIComponent(c.token);
+  $("brief").value = [
+    "You have access to a Meta-System prototype (a browser-based workspace that runs Claude Code sessions).",
+    "",
+    "Full interface (open in a browser):",
+    c.base + "/" + t,
+    "",
+    "Read-only JSON endpoints (plain GET):",
+    c.base + "/api/version" + t,
+    c.base + "/api/sessions" + t + "   (live sessions)",
+    c.base + "/api/sessions/past" + t,
+    c.base + "/api/sessions/<sessionId>" + t + "&full=1   (one transcript)",
+    c.base + "/api/projects" + t,
+    "",
+    "For now, only view. Do not type into terminals or send messages unless asked."
+  ].join("\n");
+}
+
+async function test() {
+  const c = save();
+  if (!c) { log("Enter a tunnel URL first."); return; }
+  if (!c.token) { log("Enter the token first."); return; }
+  setStatus("Testing...");
+  log("Testing " + c.base);
+  try {
+    const res = await fetch(c.base + "/api/version?token=" + encodeURIComponent(c.token));
+    if (res.status === 403) {
+      setStatus("Token rejected", "error");
+      log("The server answered 403: the token is wrong.");
+      return;
+    }
+    if (!res.ok) {
+      setStatus("Error " + res.status, "error");
+      log("The server answered " + res.status + ".");
+      return;
+    }
+    const v = await res.json();
+    setStatus("Connected: " + (v.label || v.running || "Meta-System"), "ok");
+    log("Connected. Running version: " + JSON.stringify(v));
+  } catch (e) {
+    setStatus("No readable reply", "error");
+    log("No readable reply. Either the tunnel is down, or the server's " +
+        "remote-access setting is off (it must allow this site). " +
+        "If Open Meta-System works, it's the setting.");
+  }
+}
+
+function openMs() {
+  const c = save();
+  if (!c || !c.token) { log("Enter the tunnel URL and token first."); return; }
+  window.open(c.base + "/?token=" + encodeURIComponent(c.token), "_blank", "noopener");
+  log("Opened Meta-System in a new tab.");
+}
+
+async function copyBrief() {
+  renderBrief();
+  try {
+    await navigator.clipboard.writeText($("brief").value);
+    log("Copied the ChatGPT text.");
+  } catch (e) {
+    $("brief").select();
+    log("Copy was blocked; the text is selected, press Ctrl+C.");
+  }
+}
+
+function forget() {
+  try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+  $("tunnel").value = "";
+  $("token").value = "";
+  setStatus("Not tested");
+  renderBrief();
+  log("Forgot the saved connection.");
+}
+
+$("test").addEventListener("click", test);
+$("open").addEventListener("click", openMs);
+$("copy").addEventListener("click", copyBrief);
+$("forget").addEventListener("click", forget);
+$("tunnel").addEventListener("change", save);
+$("token").addEventListener("change", save);
+load();
+</script>
+</body>
+</html>
