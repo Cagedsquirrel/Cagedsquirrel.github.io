@@ -5,246 +5,156 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CagedSquirrel Connection</title>
 <link rel="stylesheet" href="style.css">
+<script src="auth.js"></script>
+<script>csRequireToken();</script>
+<style>.hidden { display: none; }</style>
 </head>
 <body>
 <div class="container">
 
 <header>
-  <h1><a href="index.html" style="text-decoration:none"><span>CagedSquirrel</span></a> / Connection</h1>
-  <div class="subtitle">Point this page at a running Meta-System tunnel</div>
+  <h1><a href="home.html" style="text-decoration:none"><span>CagedSquirrel</span></a> / Connection</h1>
+  <div class="subtitle">The Meta-System prototype on dot113</div>
 </header>
 
 <section class="panel">
-  <h2>Connection</h2>
-  <p class="muted">
-    Saved in this browser only. Nothing you enter here is sent to GitHub.
-    You can paste the full link, token included, into the first field.
-  </p>
-
-  <label for="tunnel">Tunnel URL</label>
-  <input id="tunnel" type="url" placeholder="https://something.trycloudflare.com">
-
-  <p class="muted" id="found">
-    The tunnel address can be filled in automatically from the members'
-    tunnel-status repository, using the GitHub token you signed in with on
-    the <a href="board.html">board</a>.
-  </p>
-  <button class="secondary" id="find">Get current address</button>
-
-  <label for="token">Token</label>
-  <input id="token" type="password" placeholder="Meta-System token">
-
-  <button class="connect" id="test">Test</button>
-  <button class="send" id="open">Open Meta-System</button>
-  <button class="secondary" id="forget">Forget</button>
-
-  <div class="status">
+  <h2>Meta-System</h2>
+  <div class="status" style="margin-top:0">
     <div id="dot" class="dot"></div>
-    <strong id="status">Not tested</strong>
+    <strong id="status">Finding the prototype...</strong>
   </div>
+  <p class="muted" id="detail"></p>
+
+  <div id="tokenBox" class="hidden">
+    <label for="msToken">Meta-System token</label>
+    <input id="msToken" type="password" placeholder="Paste once; saved in this browser" autocomplete="off">
+  </div>
+
+  <button class="send" id="open">Open Meta-System</button>
+  <button class="connect" id="test">Test connection</button>
+  <button class="secondary" id="refresh">Look up again</button>
 </section>
 
 <section class="panel">
   <h2>For ChatGPT</h2>
   <p class="muted">
     Paste this into a ChatGPT conversation so it knows how to reach the
-    prototype. It includes the token.
+    prototype. It includes the Meta-System token.
   </p>
   <textarea id="brief" readonly></textarea>
   <button class="connect" id="copy">Copy for ChatGPT</button>
+  <span class="muted" id="copied"></span>
 </section>
 
-<section class="panel">
-  <h2>Log</h2>
-  <div id="log">Ready.</div>
-</section>
-
-<footer><a href="index.html">Home</a></footer>
+<footer><a href="home.html">Home</a></footer>
 
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-const KEY = "cagedsquirrel.connection";
+const ghToken = csGetToken();
+const LOCAL = "cagedsquirrel.connection";   // Meta-System token typed by hand
+let base = "";
+let msToken = "";
 
-function log(message) {
-  const time = new Date().toLocaleTimeString();
-  $("log").textContent += "\n[" + time + "] " + message;
-  $("log").scrollTop = $("log").scrollHeight;
-}
-
-function setStatus(text, kind) {
+function setStatus(text, kind, detail) {
   $("status").textContent = text;
   $("dot").className = "dot " + (kind || "");
+  $("detail").textContent = detail || "";
 }
 
-// Accepts a bare host, a URL, or a full link with ?token= and splits it.
-function readFields() {
-  let raw = $("tunnel").value.trim();
-  let token = $("token").value.trim();
-  if (!raw) return null;
-  if (!/^https?:\/\//i.test(raw)) raw = "https://" + raw;
-  let url;
-  try { url = new URL(raw); } catch (e) { return null; }
-  const fromLink = url.searchParams.get("token");
-  if (fromLink && !token) {
-    token = fromLink;
-    $("token").value = token;
+function savedMsToken() {
+  try { return (JSON.parse(localStorage.getItem(LOCAL) || "{}").token) || ""; } catch (e) { return ""; }
+}
+
+function currentMsToken() {
+  const typed = $("msToken").value.trim();
+  if (typed) {
+    try { localStorage.setItem(LOCAL, JSON.stringify({ token: typed })); } catch (e) { /* ignore */ }
   }
-  const base = url.origin;
-  $("tunnel").value = base;
-  return { base: base, token: token };
+  return msToken || typed;
 }
 
-function save() {
-  const c = readFields();
+async function lookUp() {
+  setStatus("Finding the prototype...");
   try {
-    if (c) localStorage.setItem(KEY, JSON.stringify(c));
-  } catch (e) { /* storage unavailable; the page still works */ }
-  renderBrief();
-  return c;
-}
-
-function load() {
-  try {
-    const c = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (c) {
-      $("tunnel").value = c.base || "";
-      $("token").value = c.token || "";
-    }
-  } catch (e) { /* ignore */ }
-  renderBrief();
-}
-
-// The tunnel's current address, published by the machine itself to the
-// private Cagedsquirrel/tunnel-status repo each time the tunnel starts.
-// Read with the board's GitHub token; the token must include that repo.
-const BOARD_KEY = "cagedsquirrel.board.token";
-const STATUS_URL = "https://api.github.com/repos/Cagedsquirrel/tunnel-status/contents/dot113.json";
-
-async function findAddress(quiet) {
-  let gh = "";
-  try { gh = localStorage.getItem(BOARD_KEY) || ""; } catch (e) { /* ignore */ }
-  if (!gh) {
-    if (!quiet) log("No GitHub token saved. Sign in on the board first.");
-    return;
-  }
-  try {
-    const res = await fetch(STATUS_URL, {
-      headers: { "Authorization": "Bearer " + gh, "Accept": "application/vnd.github.raw+json" },
-      cache: "no-store"
-    });
-    if (res.status === 401) {
-      log("GitHub didn't accept the saved token. It may have expired; sign in again on the board.");
-      return;
-    }
-    if (res.status === 404 || res.status === 403) {
-      log("Your GitHub token can't see the tunnel-status repository. Add it to the token's selected repositories.");
-      return;
-    }
-    if (!res.ok) { log("GitHub answered " + res.status + "."); return; }
-    const info = await res.json();
-    if (!info.url) { log("No address published yet."); return; }
-    const changed = $("tunnel").value.trim() !== info.url;
-    $("tunnel").value = info.url;
-    $("found").textContent = "Current address from dot113, published " +
-      new Date(info.updated).toLocaleString() + ".";
-    save();
-    log(changed ? "Filled in the current address: " + info.url : "Address is current.");
+    const info = await csTunnelInfo(ghToken);
+    if (!info.url) { setStatus("No address published yet.", "error"); return; }
+    base = info.url.replace(/\/+$/, "");
+    msToken = info.token || "";
+    $("tokenBox").classList.toggle("hidden", !!msToken);
+    if (!msToken) $("msToken").value = savedMsToken();
+    setStatus("Found: " + base, "ok",
+      "Published by dot113 " + new Date(info.updated).toLocaleString() + "." +
+      (msToken ? "" : " The Meta-System token isn't published, so enter it once below."));
+    renderBrief();
   } catch (e) {
-    log("Couldn't reach GitHub to get the address.");
+    setStatus("Couldn't find the prototype.", "error", e.message);
   }
-}
-
-function renderBrief() {
-  const c = readFields();
-  if (!c || !c.token) {
-    $("brief").value = "Enter the tunnel URL and token above first.";
-    return;
-  }
-  const t = "?token=" + encodeURIComponent(c.token);
-  $("brief").value = [
-    "You have access to a Meta-System prototype (a browser-based workspace that runs Claude Code sessions).",
-    "",
-    "Full interface (open in a browser):",
-    c.base + "/" + t,
-    "",
-    "Read-only JSON endpoints (plain GET):",
-    c.base + "/api/version" + t,
-    c.base + "/api/sessions" + t + "   (live sessions)",
-    c.base + "/api/sessions/past" + t,
-    c.base + "/api/sessions/<sessionId>" + t + "&full=1   (one transcript)",
-    c.base + "/api/projects" + t,
-    "",
-    "For now, only view. Do not type into terminals or send messages unless asked."
-  ].join("\n");
 }
 
 async function test() {
-  const c = save();
-  if (!c) { log("Enter a tunnel URL first."); return; }
-  if (!c.token) { log("Enter the token first."); return; }
-  setStatus("Testing...");
-  log("Testing " + c.base);
+  const t = currentMsToken();
+  if (!base) { setStatus("No address yet.", "error", "Use Look up again."); return; }
+  if (!t) { setStatus("The Meta-System token is needed.", "error", "Paste it in the field above."); return; }
+  setStatus("Testing " + base + "...");
   try {
-    const res = await fetch(c.base + "/api/version?token=" + encodeURIComponent(c.token));
-    if (res.status === 403) {
-      setStatus("Token rejected", "error");
-      log("The server answered 403: the token is wrong.");
-      return;
-    }
-    if (!res.ok) {
-      setStatus("Error " + res.status, "error");
-      log("The server answered " + res.status + ".");
-      return;
-    }
+    const res = await fetch(base + "/api/version?token=" + encodeURIComponent(t), { cache: "no-store" });
+    if (res.status === 403) { setStatus("Meta-System refused the token.", "error"); return; }
+    if (!res.ok) { setStatus("Meta-System answered " + res.status + ".", "error"); return; }
     const v = await res.json();
-    setStatus("Connected: " + (v.label || v.running || "Meta-System"), "ok");
-    log("Connected. Running version: " + JSON.stringify(v));
+    setStatus("Connected: " + (v.label || "Meta-System"), "ok", base);
   } catch (e) {
-    setStatus("No readable reply", "error");
-    log("No readable reply. Either the tunnel is down, or the server's " +
-        "remote-access setting is off (it must allow this site). " +
-        "If Open Meta-System works, it's the setting.");
+    setStatus("No answer from the prototype.", "error",
+      "The tunnel may have just restarted with a new address. Wait a minute, then Look up again.");
   }
 }
 
 function openMs() {
-  const c = save();
-  if (!c || !c.token) { log("Enter the tunnel URL and token first."); return; }
-  window.open(c.base + "/?token=" + encodeURIComponent(c.token), "_blank", "noopener");
-  log("Opened Meta-System in a new tab.");
+  const t = currentMsToken();
+  if (!base) { setStatus("No address yet.", "error", "Use Look up again."); return; }
+  if (!t) { setStatus("The Meta-System token is needed.", "error", "Paste it in the field above."); return; }
+  window.open(base + "/?token=" + encodeURIComponent(t), "_blank", "noopener");
+}
+
+function renderBrief() {
+  const t = msToken || $("msToken").value.trim();
+  if (!base || !t) { $("brief").value = "Available once the address and Meta-System token are known."; return; }
+  const q = "?token=" + encodeURIComponent(t);
+  $("brief").value = [
+    "You have access to a Meta-System prototype (a browser-based workspace that runs Claude Code sessions).",
+    "",
+    "Full interface (open in a browser):",
+    base + "/" + q,
+    "",
+    "Read-only JSON endpoints (plain GET):",
+    base + "/api/version" + q,
+    base + "/api/sessions" + q + "   (live sessions)",
+    base + "/api/sessions/past" + q,
+    base + "/api/sessions/<sessionId>" + q + "&full=1   (one transcript)",
+    base + "/api/projects" + q,
+    "",
+    "For now, only view. Do not type into terminals or send messages unless asked."
+  ].join("\n");
 }
 
 async function copyBrief() {
   renderBrief();
   try {
     await navigator.clipboard.writeText($("brief").value);
-    log("Copied the ChatGPT text.");
+    $("copied").textContent = " Copied.";
   } catch (e) {
     $("brief").select();
-    log("Copy was blocked; the text is selected, press Ctrl+C.");
+    $("copied").textContent = " Copy was blocked; the text is selected, press Ctrl+C.";
   }
 }
 
-function forget() {
-  try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
-  $("tunnel").value = "";
-  $("token").value = "";
-  setStatus("Not tested");
-  renderBrief();
-  log("Forgot the saved connection.");
-}
-
-$("find").addEventListener("click", () => findAddress(false));
-$("test").addEventListener("click", test);
 $("open").addEventListener("click", openMs);
+$("test").addEventListener("click", test);
+$("refresh").addEventListener("click", lookUp);
 $("copy").addEventListener("click", copyBrief);
-$("forget").addEventListener("click", forget);
-$("tunnel").addEventListener("change", save);
-$("token").addEventListener("change", save);
-load();
-findAddress(true);
+$("msToken").addEventListener("input", renderBrief);
+if (ghToken) lookUp();
 </script>
 </body>
 </html>

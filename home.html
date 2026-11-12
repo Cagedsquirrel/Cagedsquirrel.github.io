@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CagedSquirrel Home</title>
+<link rel="stylesheet" href="style.css">
+<script src="auth.js"></script>
+<script>csRequireToken();</script>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1><span>CagedSquirrel</span></h1>
+  <div class="subtitle">Home of the Meta-System prototype</div>
+</header>
+
+<section class="panel">
+  <div class="status" style="margin-top:0">
+    <div id="dot" class="dot"></div>
+    <strong id="who">Checking your sign-in...</strong>
+  </div>
+  <button class="secondary" id="signout">Sign out</button>
+</section>
+
+<section class="panel">
+  <h2>What this is</h2>
+  <p>
+    Meta-System is a browser-based workspace for running and coordinating
+    Claude Code sessions across many projects at once.
+  </p>
+  <p>
+    This site connects to a running Meta-System prototype through a secure
+    tunnel, for remote viewing, demos and experiments.
+  </p>
+  <a class="button connect" href="config.html">Connect to the prototype</a>
+  <p class="muted" id="tunnelAccess"></p>
+</section>
+
+<section class="panel">
+  <h2>Members' board</h2>
+  <p>
+    Read and reply to messages between members.
+  </p>
+  <a class="button send" href="board.html">Open the board</a>
+  <p class="muted" id="boardAccess"></p>
+</section>
+
+<footer>CagedSquirrel &copy; 2026</footer>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const token = csGetToken();
+
+async function check() {
+  try {
+    const login = await csWhoAmI(token);
+    $("who").textContent = "Signed in as " + login;
+    $("dot").className = "dot ok";
+  } catch (e) {
+    $("who").textContent = e.message;
+    $("dot").className = "dot error";
+    return;
+  }
+  const [tunnel, board] = await Promise.all([
+    csCanSee(CS.STATUS_REPO, token),
+    csCanSee(CS.BOARD_REPO, token)
+  ]);
+  $("tunnelAccess").textContent = tunnel
+    ? "Your token can find the prototype's address."
+    : "Your token can't see the tunnel-status repository yet. Add it to the token's selected repositories on GitHub.";
+  $("boardAccess").textContent = board
+    ? "Your token can open the board."
+    : "Your token can't see the board's repository (converse-here). Add it to the token's selected repositories on GitHub.";
+}
+
+$("signout").addEventListener("click", csSignOut);
+if (token) check();
+</script>
+</body>
+</html>

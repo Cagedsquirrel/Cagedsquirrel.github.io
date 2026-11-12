@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CagedSquirrel Board</title>
 <link rel="stylesheet" href="style.css">
+<script src="auth.js"></script>
+<script>csRequireToken();</script>
 <style>
   .hidden { display: none; }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; }
@@ -42,34 +44,15 @@
 <div class="container">
 
 <header>
-  <h1><a href="index.html" style="text-decoration:none"><span>CagedSquirrel</span></a> / Board</h1>
+  <h1><a href="home.html" style="text-decoration:none"><span>CagedSquirrel</span></a> / Board</h1>
   <div class="subtitle">Members' messages, kept as GitHub Discussions</div>
 </header>
 
 <section class="panel" id="access">
-  <h2>Sign in</h2>
-  <p class="muted">
-    Uses your own GitHub token. It is saved in this browser only and sent
-    only to GitHub. Only members of the shared repository can read or post.
-  </p>
-  <label for="token">GitHub token</label>
-  <input id="token" type="password" placeholder="github_pat_... or ghp_..." autocomplete="off">
-  <button class="connect" id="signin">Sign in</button>
-  <button class="secondary" id="forget">Forget</button>
-  <div class="status">
+  <div class="status" style="margin-top:0">
     <div id="dot" class="dot"></div>
-    <strong id="status">Not signed in</strong>
+    <strong id="status">Signing in...</strong>
   </div>
-  <details style="margin-top:14px">
-    <summary>How to make a token (one time)</summary>
-    <ol>
-      <li>On GitHub, open Settings, then Developer settings, then Personal access tokens, then Fine-grained tokens, and choose Generate new token.</li>
-      <li>Resource owner: the account that owns the shared repository. Repository access: Only select repositories, and pick the shared repository.</li>
-      <li>Permissions: Discussions, Read and write. Leave everything else as it is.</li>
-      <li>Generate the token, copy it, and paste it above.</li>
-      <li>If the shared repository doesn't show up in the list, make a classic token instead (Tokens (classic), scope <code>repo</code>). It works the same here but reaches all your private repositories, so keep it to this browser.</li>
-    </ol>
-  </details>
 </section>
 
 <section class="panel hidden" id="listView">
@@ -112,7 +95,7 @@
   <div id="log">Ready.</div>
 </section>
 
-<footer><a href="index.html">Home</a></footer>
+<footer><a href="home.html">Home</a></footer>
 
 </div>
 
@@ -173,8 +156,8 @@ function show(view) {
 // ---------- sign in ----------
 
 async function signIn() {
-  token = $("token").value.trim();
-  if (!token) { log("Paste a token first."); return; }
+  token = csGetToken();
+  if (!token) { location.replace("index.html"); return; }
   setStatus("Checking...");
   try {
     // Ask for the login on its own first: when the token can't see the
@@ -192,7 +175,7 @@ async function signIn() {
     d.viewer = v.viewer;
     if (!d.repository) {
       setStatus("Signed in as " + d.viewer.login + ", but no access", "error");
-      log("The token works, but it can't see the shared repository. Check that the token's resource owner is Cagedsquirrel and the shared repository is selected; if the organization requires approval, an admin must approve the token first. A classic token with the repo scope also works.");
+      log("Your token works, but it can't see the board's repository (converse-here). Add it to the token's selected repositories on GitHub. Check that the token's resource owner is Cagedsquirrel and the shared repository is selected; if the organization requires approval, an admin must approve the token first. A classic token with the repo scope also works.");
       return;
     }
     repoId = d.repository.id;
@@ -207,15 +190,6 @@ async function signIn() {
     setStatus("Sign in failed", "error");
     log(e.message);
   }
-}
-
-function forget() {
-  try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
-  token = ""; repoId = null; current = null;
-  $("token").value = "";
-  setStatus("Not signed in");
-  show(null);
-  log("Forgot the saved token.");
 }
 
 // ---------- routing: #d-12 is a thread, #new is the new-topic form ----------
@@ -368,18 +342,13 @@ $("postTopic").addEventListener("click", async () => {
 
 // ---------- wiring ----------
 
-$("signin").addEventListener("click", signIn);
-$("forget").addEventListener("click", forget);
 $("refresh").addEventListener("click", loadTopics);
 $("newTopic").addEventListener("click", () => { location.hash = "#new"; });
 $("cancelTopic").addEventListener("click", () => { location.hash = ""; });
 $("back").addEventListener("click", () => { location.hash = ""; });
 window.addEventListener("hashchange", route);
 
-try {
-  const saved = localStorage.getItem(KEY);
-  if (saved) { $("token").value = saved; signIn(); }
-} catch (e) { /* storage unavailable; sign in by hand */ }
+signIn();
 </script>
 </body>
 </html>

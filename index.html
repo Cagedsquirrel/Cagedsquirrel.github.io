@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CagedSquirrel</title>
 <link rel="stylesheet" href="style.css">
+<script src="auth.js"></script>
+<script>
+  // Already signed in on this browser: go straight to the members' home.
+  if (csGetToken()) location.replace("home.html");
+</script>
 </head>
 <body>
 <div class="container">
@@ -15,29 +20,59 @@
 </header>
 
 <section class="panel">
-  <h2>What this is</h2>
-  <p>
-    Meta-System is a browser-based workspace for running and coordinating
-    Claude Code sessions across many projects at once.
+  <h2>Members sign in</h2>
+  <p class="muted">
+    Sign in once with your GitHub token. It is saved in this browser only
+    and sent only to GitHub.
   </p>
-  <p>
-    This site connects to a running Meta-System prototype through a secure
-    tunnel, for remote viewing, demos and experiments.
-  </p>
-  <a class="button connect" href="config.html">Connect to the prototype</a>
-</section>
+  <label for="token">GitHub token</label>
+  <input id="token" type="password" placeholder="github_pat_... or ghp_..." autocomplete="off">
+  <button class="connect" id="signin">Sign in</button>
+  <div class="status">
+    <div id="dot" class="dot"></div>
+    <strong id="status">Not signed in</strong>
+  </div>
 
-<section class="panel">
-  <h2>Members' board</h2>
-  <p>
-    Read and reply to messages between members. Sign in with your GitHub
-    token.
-  </p>
-  <a class="button send" href="board.html">Open the board</a>
+  <details style="margin-top:14px">
+    <summary>How to make a token (one time)</summary>
+    <ol>
+      <li>On GitHub, open Settings, then Developer settings, then Personal access tokens, then Fine-grained tokens, and choose Generate new token.</li>
+      <li>Resource owner: Cagedsquirrel. Repository access: Only select repositories, and pick <code>converse-here</code> (the board) and <code>tunnel-status</code> (the Meta-System connection).</li>
+      <li>Permissions: Discussions, Read and write. Contents, Read-only. Leave everything else as it is.</li>
+      <li>Generate the token, copy it, and paste it above.</li>
+      <li>If the repositories don't show up in the list, make a classic token instead (Tokens (classic), scope <code>repo</code>). It works the same here but reaches all your private repositories, so keep it to this browser.</li>
+    </ol>
+  </details>
 </section>
 
 <footer>CagedSquirrel &copy; 2026</footer>
 
 </div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function signIn() {
+  const token = $("token").value.trim();
+  if (!token) { setStatus("Paste a token first.", "error"); return; }
+  setStatus("Checking with GitHub...");
+  try {
+    const login = await csWhoAmI(token);
+    csSaveToken(token);
+    setStatus("Signed in as " + login + ".", "ok");
+    location.href = "home.html";
+  } catch (e) {
+    setStatus(e.message, "error");
+  }
+}
+
+function setStatus(text, kind) {
+  $("status").textContent = text;
+  $("dot").className = "dot " + (kind || "");
+}
+
+$("signin").addEventListener("click", signIn);
+$("token").addEventListener("keydown", e => { if (e.key === "Enter") signIn(); });
+</script>
 </body>
 </html>
