@@ -27,7 +27,8 @@
 
   <div id="tokenBox" class="hidden">
     <label for="msToken">Meta-System token</label>
-    <input id="msToken" type="password" placeholder="Paste once; saved in this browser" autocomplete="off">
+    <input id="msToken" type="password" placeholder="Paste once; saved in this browser" autocomplete="new-password">
+    <p class="muted hidden" id="tokenWarn" style="color:var(--red)"></p>
   </div>
 
   <button class="send" id="open">Open Meta-System</button>
@@ -63,13 +64,49 @@ function setStatus(text, kind, detail) {
   $("detail").textContent = detail || "";
 }
 
+// A GitHub token must never stand in for the Meta-System token: it would end
+// up in every link this page builds, including the text pasted into ChatGPT.
+const GH_TOKEN = /^(github_pat_|gh[pousr]_)/;
+const GH_WARN = "That's a GitHub token, not the Meta-System token. " +
+  "The Meta-System token is in server.token in the app folder on dot113.";
+
+function isGitHubToken(t) { return GH_TOKEN.test(t || ""); }
+
+function forgetSavedMsToken() {
+  try { localStorage.removeItem(LOCAL); } catch (e) { /* ignore */ }
+}
+
+function warnGitHubToken() {
+  $("msToken").value = "";
+  forgetSavedMsToken();
+  $("tokenBox").classList.remove("hidden");
+  $("tokenWarn").textContent = GH_WARN;
+  $("tokenWarn").classList.remove("hidden");
+}
+
+function clearWarn() {
+  $("tokenWarn").textContent = "";
+  $("tokenWarn").classList.add("hidden");
+}
+
 function savedMsToken() {
-  try { return (JSON.parse(localStorage.getItem(LOCAL) || "{}").token) || ""; } catch (e) { return ""; }
+  let t = "";
+  try { t = (JSON.parse(localStorage.getItem(LOCAL) || "{}").token) || ""; } catch (e) { return ""; }
+  if (isGitHubToken(t)) { warnGitHubToken(); return ""; }
+  return t;
+}
+
+// The token typed in the box, or "" (refused and cleared) if it's a GitHub token.
+function typedMsToken() {
+  const typed = $("msToken").value.trim();
+  if (isGitHubToken(typed)) { warnGitHubToken(); return ""; }
+  return typed;
 }
 
 function currentMsToken() {
-  const typed = $("msToken").value.trim();
+  const typed = typedMsToken();
   if (typed) {
+    clearWarn();
     try { localStorage.setItem(LOCAL, JSON.stringify({ token: typed })); } catch (e) { /* ignore */ }
   }
   return msToken || typed;
@@ -81,7 +118,8 @@ async function lookUp() {
     const info = await csTunnelInfo(ghToken);
     if (!info.url) { setStatus("No address published yet.", "error"); return; }
     base = info.url.replace(/\/+$/, "");
-    msToken = info.token || "";
+    // A GitHub-format token here counts as not published.
+    msToken = info.token && !isGitHubToken(info.token) ? info.token : "";
     $("tokenBox").classList.toggle("hidden", !!msToken);
     if (!msToken) $("msToken").value = savedMsToken();
     setStatus("Found: " + base, "ok",
@@ -96,7 +134,7 @@ async function lookUp() {
 async function test() {
   const t = currentMsToken();
   if (!base) { setStatus("No address yet.", "error", "Use Look up again."); return; }
-  if (!t) { setStatus("The Meta-System token is needed.", "error", "Paste it in the field above."); return; }
+  if (!t) { setStatus("The Meta-System token is needed.", "error", "Paste it in the field above."); renderBrief(); return; }
   setStatus("Testing " + base + "...");
   try {
     const res = await fetch(base + "/api/version?token=" + encodeURIComponent(t), { cache: "no-store" });
@@ -113,13 +151,13 @@ async function test() {
 function openMs() {
   const t = currentMsToken();
   if (!base) { setStatus("No address yet.", "error", "Use Look up again."); return; }
-  if (!t) { setStatus("The Meta-System token is needed.", "error", "Paste it in the field above."); return; }
+  if (!t) { setStatus("The Meta-System token is needed.", "error", "Paste it in the field above."); renderBrief(); return; }
   window.open(base + "/?token=" + encodeURIComponent(t), "_blank", "noopener");
 }
 
 function renderBrief() {
-  const t = msToken || $("msToken").value.trim();
-  if (!base || !t) { $("brief").value = "Available once the address and Meta-System token are known."; return; }
+  const t = msToken || typedMsToken();
+  if (!base || !t || isGitHubToken(t)) { $("brief").value = "Available once the address and Meta-System token are known."; return; }
   const q = "?token=" + encodeURIComponent(t);
   $("brief").value = [
     "You have access to a Meta-System prototype (a browser-based workspace that runs Claude Code sessions).",
@@ -154,6 +192,7 @@ $("test").addEventListener("click", test);
 $("refresh").addEventListener("click", lookUp);
 $("copy").addEventListener("click", copyBrief);
 $("msToken").addEventListener("input", renderBrief);
+savedMsToken();   // clears a GitHub token saved here earlier, even if lookup fails
 if (ghToken) lookUp();
 </script>
 </body>
